@@ -1,0 +1,544 @@
+{
+  "name": "Job Radar - Collect & Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "=cronExpression",
+              "expression": "0 10,22 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        -80
+      ],
+      "id": "0f750df5-8c4e-4fc8-8d71-122962593290",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://community.n8n.io/c/jobs.rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        224,
+        -80
+      ],
+      "id": "0779c959-37be-44ca-989b-0eda59af6760",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  out.push({ json: {\n    title: j.title || '',\n    company: 'Forum n8n',\n    url: j.link || j.guid || '',\n    text: (j.contentSnippet || j.content || '').toString().slice(0, 2000),\n    location: '',\n    date: j.isoDate || j.pubDate || '',\n    source: 'n8n Forum'\n  }});\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -80
+      ],
+      "id": "7e5da70c-1ace-4a6e-8324-5bcaf9dc4515",
+      "name": "Normalize Forum"
+    },
+    {
+      "parameters": {
+        "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=n8n&f_TPR=r2592000&start=0",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        -160
+      ],
+      "id": "6eeaf2a9-ff20-4f35-b5a7-4ccee4074542",
+      "name": "LinkedIn Search",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "executeOnce": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = ($input.first().json.data || '').toString();\nconst out = [];\nconst strip = s => (s || '').replace(/<[^>]+>/g, ' ')\n  .replace(/&amp;/g, '&').replace(/&#x27;|&#39;|&apos;/g, \"'\")\n  .replace(/&quot;/g, '\"').replace(/&nbsp;/g, ' ').replace(/\\s+/g, ' ').trim();\nfor (const block of html.split('<li>')) {\n  const id = block.match(/urn:li:jobPosting:(\\d+)/);\n  if (!id) continue;\n  const title = (block.match(/base-search-card__title[^>]*>([\\s\\S]*?)<\\/h3>/) || [])[1];\n  const company = (block.match(/base-search-card__subtitle[\\s\\S]*?<a[^>]*>([\\s\\S]*?)<\\/a>/) || [])[1];\n  const loc = (block.match(/job-search-card__location[^>]*>([\\s\\S]*?)<\\/span>/) || [])[1];\n  const date = (block.match(/<time[^>]*datetime=\"([^\"]+)\"/) || [])[1] || '';\n  out.push({ json: {\n    title: strip(title), company: strip(company),\n    url: 'https://www.linkedin.com/jobs/view/' + id[1],\n    text: '', location: strip(loc), date, source: 'LinkedIn'\n  }});\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -160
+      ],
+      "id": "652aa825-467e-4b82-96f1-d52d967fcfef",
+      "name": "Normalize LinkedIn"
+    },
+    {
+      "parameters": {
+        "url": "https://jobicy.com/api/v2/remote-jobs?count=50&tag=n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        -224
+      ],
+      "id": "326eefa2-d330-4b5b-962f-8c6c17ff2180",
+      "name": "Jobicy",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  const jobs = Array.isArray(item.json.jobs) ? item.json.jobs : [];\n  for (const job of jobs) {\n    out.push({ json: {\n      title: job.jobTitle || '',\n      company: job.companyName || '',\n      url: job.url || '',\n      text: (job.jobExcerpt || job.jobDescription || '').toString().replace(/<[^>]+>/g, ' ').slice(0, 2000),\n      location: job.jobGeo || '',\n      date: job.pubDate || '',\n      source: 'Jobicy'\n    }});\n  }\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -224
+      ],
+      "id": "a566e654-ddb4-4bc9-9170-66944eb211e1",
+      "name": "Normalize Jobicy"
+    },
+    {
+      "parameters": {
+        "url": "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        1568,
+        -304
+      ],
+      "id": "4e429d42-f791-4804-8882-b5856ecd9f4b",
+      "name": "WWR",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const t = j.title || '';\n  const idx = t.indexOf(':');\n  out.push({ json: {\n    title: idx > -1 ? t.slice(idx + 1).trim() : t,\n    company: idx > -1 ? t.slice(0, idx).trim() : '',\n    url: j.link || '',\n    text: (j.contentSnippet || j.content || '').toString().slice(0, 2000),\n    location: '', date: j.isoDate || j.pubDate || '', source: 'WeWorkRemotely'\n  }});\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -304
+      ],
+      "id": "761f550f-c50c-46fa-8847-831d64a4f1a9",
+      "name": "Normalize WWR"
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2016,
+        -112
+      ],
+      "id": "973541a5-1075-49eb-ba81-555be8fcca84",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter v3 - Job Radar (buang tawaran jasa, senior, & lowongan basi)\nconst INCLUDE = /\\b(n8n|automation|automate|workflow|integration|integrate|low-?code|no-?code|api|rpa)\\b/i;\nconst EXCLUDE = /\\b(commission[- ]only|unpaid)\\b/i;\n// tawaran jasa orang lain, bukan lowongan kerja\nconst SELLER = /^\\s*[\\[(]?\\s*(for\\s+hire|open\\s+to\\s+collab|looking\\s+for\\s+(remote\\s+)?work|hire\\s+me)|\\$\\s?\\d+/i;\n// posisi senior dibuang biar fokus entry/mid level\nconst SENIOR = /\\b(senior|sr\\.?|lead|principal|staff|head|director|vp|chief)\\b/i;\nconst MAX_AGE_DAYS = 14; // hanya lowongan maksimal 14 hari\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  if (!j.url) continue;\n  const text = ((j.title || '') + ' ' + (j.text || ''));\n  if (EXCLUDE.test(text)) continue;\n  if (SELLER.test(j.title || '')) continue;\n  if (SENIOR.test(j.title || '')) continue;\n  const fresh = !j.date || (Date.now() - new Date(j.date).getTime()) <= MAX_AGE_DAYS * 864e5;\n  if (!fresh) continue;\n  if (j.source !== 'LinkedIn' && !INCLUDE.test(text)) continue;\n  out.push({ json: j });\n}\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        -80
+      ],
+      "id": "0ab51712-e751-4de9-bdab-f2f68ebe6691",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "operation": "rowNotExists",
+        "dataTableId": {
+          "__rl": true,
+          "value": "ILSTq2o76ijaigHT",
+          "mode": "list",
+          "cachedResultName": "job_radar_seen",
+          "cachedResultUrl": "/projects/b4nMHouUg0oph5Uu/datatables/ILSTq2o76ijaigHT"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "url",
+              "keyValue": "={{ $json.url }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        -80
+      ],
+      "id": "dbc31fab-08a2-4d55-abba-e9fe7a9388c0",
+      "name": "Cek Sudah Pernah"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Digest v3 - job radar (jatah per sumber + anti duplikat)\nconst items = $input.all().map(i => i.json);\nconst score = j => {\n  const t = ((j.title || '') + ' ' + (j.text || '')).toLowerCase();\n  const title = (j.title || '').toLowerCase();\n  let s = 0;\n  if (/\\bn8n\\b/.test(t)) s += 3;\n  if (/(automation|automate|workflow)/.test(t)) s += 2;\n  if (/(low-?code|no-?code|make\\.com|zapier)/.test(t)) s += 1;\n  if (/(remote|worldwide|anywhere|global)/.test(t + ' ' + (j.location || ''))) s += 1;\n  if (j.date && (Date.now() - new Date(j.date).getTime()) <= 72 * 3600e3) s += 1;\n  if (/(developer|engineer|builder|specialist|analyst|architect)/.test(title)) s += 1;\n  return s;\n};\n// buang duplikat url dulu (jaring pengaman terakhir)\nconst seen = new Set();\nconst all = items\n  .filter(j => !seen.has(j.url) && seen.add(j.url))\n  .map(j => ({ ...j, score: score(j), first_seen: new Date().toISOString() }))\n  .sort((a, b) => b.score - a.score);\n// giliran per sumber: yang paling langka tampil duluan, biar sumber kecil tidak tenggelam\nconst QUOTA = 8, MAX = 15;\nconst bySource = {};\nfor (const j of all) {\n  const s = j.source || 'Lainnya';\n  (bySource[s] = bySource[s] || []).push(j);\n}\nconst names = Object.keys(bySource).sort((a, b) => bySource[a].length - bySource[b].length);\nconst jobs = [];\nfor (let r = 0; r < QUOTA && jobs.length < MAX; r++) {\n  for (const n of names) {\n    if (jobs.length >= MAX) break;\n    if (bySource[n][r]) jobs.push(bySource[n][r]);\n  }\n}\nif (!jobs.length) return [];\n// tampilan akhir diurutkan skor tertinggi dulu\njobs.sort((a, b) => b.score - a.score);\nconst lines = jobs.map((j, i) =>\n  `${i + 1}. [${j.score}] ${j.title}${j.company ? ' | ' + j.company : ''} (${j.source})\\n` +\n  (j.location ? `   ${j.location}\\n` : '') + `   ${j.url}`);\nconst today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });\nconst text = `🎯 Job Radar ${today}\\n${jobs.length} lowongan baru:\\n\\n` + lines.join('\\n\\n');\nreturn [{ json: { text, jobs } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        -80
+      ],
+      "id": "609cc6cd-0414-4cb4-8cbc-71c175c14548",
+      "name": "Build Digest"
+    },
+    {
+      "parameters": {
+        "chatId": "5884252719",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2912,
+        -80
+      ],
+      "id": "6c67f65c-4288-47aa-b3c1-d0c5793aeff7",
+      "name": "Kirim Digest",
+      "webhookId": "0af5e938-79d4-4d42-a75a-aed73ca48ece",
+      "credentials": {
+        "telegramApi": {
+          "id": "nUtzzloZfnHBLa2l",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $('Build Digest').first().json.jobs.map(j => ({ json: j }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        -80
+      ],
+      "id": "a10d5e6a-3a51-4e73-8439-8efaca99cf17",
+      "name": "Explode"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "ILSTq2o76ijaigHT",
+          "mode": "list",
+          "cachedResultName": "job_radar_seen",
+          "cachedResultUrl": "/projects/b4nMHouUg0oph5Uu/datatables/ILSTq2o76ijaigHT"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "url": "={{ $json.url }}",
+            "title": "={{ $json.title }}",
+            "source": "={{ $json.source }}",
+            "first_seen": "={{ $json.first_seen }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "first_seen",
+              "displayName": "first_seen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3360,
+        -80
+      ],
+      "id": "aed69c29-7fa7-487d-8df3-961fc87c7527",
+      "name": "Catat Sudah Dikirim"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Normalize Forum",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Forum": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Normalize LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Jobicy",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Jobicy": {
+      "main": [
+        [
+          {
+            "node": "Normalize Jobicy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Jobicy": {
+      "main": [
+        [
+          {
+            "node": "WWR",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "WWR": {
+      "main": [
+        [
+          {
+            "node": "Normalize WWR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize WWR": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Cek Sudah Pernah",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Sudah Pernah": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest": {
+      "main": [
+        [
+          {
+            "node": "Kirim Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Digest": {
+      "main": [
+        [
+          {
+            "node": "Explode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode": {
+      "main": [
+        [
+          {
+            "node": "Catat Sudah Dikirim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Jakarta",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "xajmaaRNlPtWJ0hx"
+  },
+  "versionId": "8daf025a-74b4-41f6-8de0-9f85a4804d18",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fbf77636e68d58b9fe4be74588f90af44ef2b72af30690c06a01742229fdb343"
+  },
+  "nodeGroups": [],
+  "id": "ErJUJAdoQh42mlWq",
+  "tags": []
+}
